@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ["1.23", "1.24"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l core coverage cli cmd sampleapps)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test -race -coverpkg=./core/...,./coverage/...,./cli/... -coverprofile=coverage.txt ./...
+
+      - name: Coverage floor (95%)
+        run: |
+          total=$(go tool cover -func=coverage.txt | awk '/^total:/ {gsub("%","",$3); print $3}')
+          echo "total coverage: ${total}%"
+          awk "BEGIN { exit !(${total} >= 95.0) }" || { echo "coverage ${total}% is below the 95% floor"; exit 1; }
+
+  dogfood:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Build CLI
+        run: go build -o slopguard-go ./cmd/slopguard-go
+
+      # slopguard-go must keep its own source under control. Complexity-only so
+      # the gate is fast and independent of the test suite.
+      - name: Dogfood (analyze own source)
+        run: ./slopguard-go analyze --path ./core --no-coverage --fail-over 300
+
+      # Regression baseline: the fixture must report a stable shape. Drift here
+      # signals an analyzer bug, not a code change in the fixture.
+      - name: Baseline assertion (sampleapps/todolist)
+        run: |
+          json=$(./slopguard-go analyze --path ./sampleapps/todolist --json --quiet)
+          methods=$(echo "$json" | jq '.summary.methodCount')
+          crappy=$(echo "$json" | jq '.summary.crappyMethodCount')
+          echo "methods=$methods crappy=$crappy"
+          test "$methods" = "10" || { echo "expected 10 methods, got $methods"; exit 1; }
+          test "$crappy" = "0"   || { echo "expected 0 crappy methods, got $crappy"; exit 1; }
