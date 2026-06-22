@@ -4,7 +4,7 @@ All notable changes to slopguard-go are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] — Unreleased
+## [0.1.0] — 2026-06-22
 
 Initial alpha release. The Go sibling of slopguard-swift and
 slopguard-typescript — same wCRAP formula, same schema-2 JSON, same CLI UX.
