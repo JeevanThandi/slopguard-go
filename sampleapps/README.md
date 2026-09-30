@@ -18,3 +18,18 @@ slopguard-go analyze --path ./sampleapps/todolist --json --quiet \
 
 Clean code, high coverage, zero crappy methods. If those numbers drift without
 a deliberate change to the fixture, the analyzer has regressed.
+
+CI also pins its mutation baseline:
+
+```bash
+slopguard-go mutate --path ./sampleapps/todolist --json --quiet \
+  | jq '{mutants: .summary.mutantCount, killed: .summary.killed, survived: .summary.survived, score: .summary.mutationScore}'
+# => { "mutants": 17, "killed": 15, "survived": 0, "score": 100 }
+```
+
+The tests kill 15 mutants. One mutant (`id++` → `id--` in `Store.All`) loops
+forever and hits the timeout, which counts as killed. One mutant
+(`id < s.nextID` → `id <= s.nextID` in `Store.All`) is equivalent: `Add` never
+stores an ID at or above `nextID`, so the extra lookup finds nothing. It
+carries a `slopguard-ignore-mutant(boundary)` marker. If a mutant survives, a
+change to the fixture's tests or to the mutation operators needs review.

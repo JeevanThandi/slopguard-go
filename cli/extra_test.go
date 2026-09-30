@@ -16,7 +16,7 @@ func TestRunDispatch(t *testing.T) {
 		}
 	}
 	out, _, code := run(t, "--version")
-	if code != 0 || !strings.Contains(out, "0.1.0") {
+	if code != 0 || !strings.Contains(out, "0.2.0") {
 		t.Errorf("--version: code=%d out=%q", code, out)
 	}
 }

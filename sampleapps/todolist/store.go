@@ -52,7 +52,7 @@ func (s *Store) Count() int {
 // All returns every todo, ordered by ascending ID.
 func (s *Store) All() []Todo {
 	out := make([]Todo, 0, len(s.items))
-	for id := 1; id < s.nextID; id++ {
+	for id := 1; id < s.nextID; id++ { // slopguard-ignore-mutant(boundary): Add never stores an ID >= nextID, so <= only adds a lookup that finds nothing
 		if todo, ok := s.items[id]; ok {
 			out = append(out, todo)
 		}

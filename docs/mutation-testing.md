@@ -7,6 +7,35 @@ This records a mutation-testing pass over the three importable packages
 tests catch is *killed*; one that slips through is a *survivor* and marks a gap
 in the tests.
 
+## Repeat it with `slopguard-go mutate`
+
+This pass used a manual harness, described below. The `mutate` command now
+does the same job, and the README section "Mutation testing" documents it. To
+repeat this pass, mutate one package at a time and scope the test runs to that
+package, as the harness did:
+
+```bash
+slopguard-go mutate --path ./core --packages ./core/...
+slopguard-go mutate --path ./coverage --packages ./coverage/...
+slopguard-go mutate --path ./cli --packages ./cli/...
+```
+
+`mutate` differs from the harness in four ways:
+
+- It has more operators: besides the binary-operator, increment and
+  boolean-literal mutants, it removes call statements, `!` and unary minus.
+- A mutant on a line that no test executes is `no_coverage` and does not run.
+- The timeout is `ceil(3 × baseline seconds) + 30` instead of `-timeout 12s`,
+  and a timeout counts as killed.
+- An equivalent mutant can be switched off in the source with the
+  `slopguard-ignore-mutant` marker, for example
+  `if s > agg.Max { // slopguard-ignore-mutant(boundary): equal values assign the same max`.
+  The inventory below lists the candidates.
+
+For one file, `slopguard-go mutate --path ./core/crap.go --packages ./core/...`
+reports 11 mutants: 10 killed and 1 survived (score 90.91%). The survivor is
+`core/crap.go:53` `s > agg.Max` → `>=`, the equivalent mutant listed below.
+
 ## How it was run
 
 A standard-library-only AST harness (`go/parser` + `go/printer`) enumerates
@@ -38,12 +67,15 @@ below so future contributors don't mistake them for missing coverage.
 - `core/crap.go:53` `s > agg.Max` → `>=`
 
   When the values are equal, the guarded assignment writes the same number, so
-  the output is identical.
+  the output is identical. `core/crap.go:53` compares `float64` scores and has
+  one exception: with a negative-zero input, the `>=` version stores -0
+  instead of 0. `CrapScore` never returns -0, so no score that slopguard-go
+  computes tells the two versions apart.
 
 ### Stable-sort comparator strictness
 - `core/aggregator.go:86`, `core/aggregator.go:87`, `core/format.go:97`
   `a.Crap > b.Crap` → `>=`
-- `core/diranalyzer.go:91` `reports[i].Path < reports[j].Path` → `<=`
+- `core/diranalyzer.go:73` `reports[i].Path < reports[j].Path` → `<=`
 
   A `>=`/`<=` comparator returns true for equal keys, which violates the
   strict-weak-ordering contract; with the distinct keys these sorts ever see,
@@ -56,7 +88,7 @@ below so future contributors don't mistake them for missing coverage.
   `len==topN` is the whole slice)
 - `core/format.go:131`, `core/format.go:138` `len(s) >= width` → `>`
   (`strings.Repeat(" ", 0)` when `len(s)==width`)
-- `coverage/runner.go:144` `buf.Len() > limit` → `>=` (excess `= 0` →
+- `coverage/runner.go:158` `buf.Len() > limit` → `>=` (excess `= 0` →
   `buf.Next(0)` is a no-op)
 
 ### Unreachable / dead-in-practice guards
@@ -75,7 +107,7 @@ below so future contributors don't mistake them for missing coverage.
   ever decisive.
 
 ### Buffer-size tuning protected by the `bufio` capacity floor
-- `coverage/profile.go:43` (×3) and `coverage/runner.go:114` (×2)
+- `coverage/profile.go:43` (×3) and `coverage/runner.go:128` (×2)
   `scanner.Buffer(make([]byte, 0, 64*1024), …)` `*` → `/`
 
   `bufio.Scanner` uses `max(maxArg, cap(buf))`, so the 64 KiB initial capacity

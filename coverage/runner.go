@@ -3,12 +3,14 @@ package coverage
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/JeevanThandi/slopguard-go/core"
+	"github.com/JeevanThandi/slopguard-go/internal/procgroup"
 )
 
 // Runner drives a test suite to produce a coverage profile. The concrete
@@ -20,6 +22,8 @@ type Runner interface {
 
 // TestOutcome reports where coverage landed after a test run.
 type TestOutcome struct {
+	// ExitCode is the go test exit code: 0 when every test passed.
+	ExitCode int
 	// ProfilePath is the produced coverage profile, or "" if the run finished
 	// without producing one.
 	ProfilePath string
@@ -35,6 +39,10 @@ type TestOutcome struct {
 type TestRunner struct {
 	// GoBinary is the go command to invoke; defaults to "go" on PATH.
 	GoBinary string
+	// Context, when set, stops the run once it is done: go test then runs in
+	// its own process group, and the whole group is killed. mutate sets it so
+	// an interrupt also stops its coverage baseline; analyze leaves it nil.
+	Context context.Context
 }
 
 // RunTests runs `go test -coverprofile=<dir>/cover.out -covermode=count
@@ -59,7 +67,13 @@ func (r *TestRunner) RunTests(projectRoot, coverageDir, packages string, progres
 
 	progress.Phase("running go test with coverage in " + projectRoot + " — this can take a while")
 
-	cmd := exec.Command(goBin, args...)
+	var cmd *exec.Cmd
+	if r.Context != nil {
+		cmd = exec.CommandContext(r.Context, goBin, args...)
+		procgroup.Prepare(cmd)
+	} else {
+		cmd = exec.Command(goBin, args...)
+	}
 	cmd.Dir = projectRoot
 	// Inherit the environment so the user's GOFLAGS/GOCACHE/proxy settings
 	// apply; force non-interactive, predictable output.
@@ -93,7 +107,7 @@ func (r *TestRunner) RunTests(projectRoot, coverageDir, packages string, progres
 	}
 
 	if produced {
-		return TestOutcome{ProfilePath: profilePath, TestsPassed: false}, nil
+		return TestOutcome{ExitCode: exitCode, ProfilePath: profilePath, TestsPassed: false}, nil
 	}
 	out := tail.String()
 	if out == "" {

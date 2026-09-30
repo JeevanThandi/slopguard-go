@@ -6,12 +6,12 @@ Email **jeevanthandi@googlemail.com** with details and reproduction steps. Pleas
 
 ## Threat model
 
-slopguard-go is a read-only static analyzer with one controlled subprocess. Concretely:
+slopguard-go is a read-only static analyzer with one controlled subprocess. Its `mutate` command also runs your tests against changed copies of your code. The copies never replace the files in your module. Concretely:
 
 * **No network, no telemetry.** slopguard-go never makes network requests and collects no usage data.
-* **No source mutation.** It reads `.go` files and never writes to them. Coverage profiles are written only to a temporary directory the tool owns, and that directory is removed when the run finishes.
-* **One subprocess.** In the default (`auto`) coverage mode the only process slopguard-go spawns is `go test`, run in your module root with `-coverprofile`/`-coverpkg`. Your tests run as they always do — slopguard-go does not inject code or override your test configuration. Use `--no-coverage` to spawn nothing, or `--coverage-file` to join a profile you already produced.
-* **Running tests executes your code.** Because gathering coverage means running your test suite, `auto` mode executes whatever your tests execute. This is the same trust boundary as running `go test` yourself. In untrusted checkouts, prefer `--no-coverage` (complexity-only) or review the suite first.
+* **No writes to your source tree.** It reads `.go` files and never writes to them. Coverage profiles are written only to a temporary directory the tool owns, and that directory is removed when the run finishes. `mutate` changes code only in copies. It writes each mutant and its overlay config to a temporary directory the tool owns, hands the mutant to the compiler with `go test -overlay`, and removes the directory when the run finishes.
+* **One subprocess.** In the default (`auto`) coverage mode the only process slopguard-go spawns is `go test`, run in your module root with `-coverprofile`/`-coverpkg`. `mutate` also spawns only `go test`: once without mutation, once with coverage (unless `--no-coverage`), and once per mutant with `-overlay`. Each of those runs gets its own process group, and a timeout or an interrupt kills the whole group. Your tests run as they always do — slopguard-go does not inject code or override your test configuration. Use `analyze --no-coverage` to spawn nothing, or `--coverage-file` to join a profile you already produced.
+* **Running tests executes your code.** Because gathering coverage means running your test suite, `auto` mode executes whatever your tests execute. `mutate` runs your tests once per mutant, with the mutated code in place. This is the same trust boundary as running `go test` yourself. In untrusted checkouts, prefer `analyze --no-coverage` (complexity-only) and do not run `mutate`, or review the suite first.
 
 ## Supply chain
 
@@ -20,4 +20,4 @@ slopguard-go is a read-only static analyzer with one controlled subprocess. Conc
 
 ## Supported versions
 
-slopguard-go is alpha (v0.1.x). Security fixes land on the latest minor release.
+slopguard-go is alpha (v0.2.x). Security fixes land on the latest minor release.

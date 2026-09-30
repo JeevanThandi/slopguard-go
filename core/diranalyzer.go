@@ -58,28 +58,10 @@ func DefaultAnalysisOptions() AnalysisOptions {
 // returns one FileReport per analyzed file, with Path relative to root
 // (forward-slash, no leading "./"), sorted by path.
 func AnalyzeTree(root string, options AnalysisOptions) ([]FileReport, error) {
-	rootAbs, err := filepath.Abs(root)
+	files, rootPrefix, err := sourceFiles(root, options)
 	if err != nil {
-		return nil, FileNotFound(root)
+		return nil, err
 	}
-	info, err := os.Stat(rootAbs)
-	if err != nil {
-		return nil, FileNotFound(rootAbs)
-	}
-
-	var files []string
-	var rootPrefix string
-	if info.IsDir() {
-		rootPrefix = rootAbs
-		files, err = enumerate(rootAbs, options)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		rootPrefix = filepath.Dir(rootAbs)
-		files = []string{rootAbs}
-	}
-
 	reports := make([]FileReport, 0, len(files))
 	for _, file := range files {
 		report, err := AnalyzeFile(file, relativize(file, rootPrefix))
@@ -90,6 +72,29 @@ func AnalyzeTree(root string, options AnalysisOptions) ([]FileReport, error) {
 	}
 	sort.Slice(reports, func(i, j int) bool { return reports[i].Path < reports[j].Path })
 	return reports, nil
+}
+
+// sourceFiles resolves root (a directory or a single file) and lists the Go
+// files to scan as absolute paths, together with the directory their
+// reported paths are relative to. Both AnalyzeTree and PlanMutants use it, so
+// `analyze` and `mutate` always see the same files.
+func sourceFiles(root string, options AnalysisOptions) (files []string, rootPrefix string, err error) {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, "", FileNotFound(root)
+	}
+	info, err := os.Stat(rootAbs)
+	if err != nil {
+		return nil, "", FileNotFound(rootAbs)
+	}
+	if !info.IsDir() {
+		return []string{rootAbs}, filepath.Dir(rootAbs), nil
+	}
+	files, err = enumerate(rootAbs, options)
+	if err != nil {
+		return nil, "", err
+	}
+	return files, rootAbs, nil
 }
 
 func enumerate(rootPath string, options AnalysisOptions) ([]string, error) {

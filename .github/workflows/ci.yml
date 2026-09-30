@@ -24,7 +24,7 @@ jobs:
 
       - name: gofmt
         run: |
-          unformatted=$(gofmt -l core coverage cli cmd sampleapps)
+          unformatted=$(gofmt -l core coverage cli cmd mutation internal sampleapps)
           if [ -n "$unformatted" ]; then
             echo "These files need gofmt:"; echo "$unformatted"; exit 1
           fi
@@ -36,7 +36,7 @@ jobs:
         run: go build ./...
 
       - name: Test
-        run: go test -race -coverpkg=./core/...,./coverage/...,./cli/... -coverprofile=coverage.txt ./...
+        run: go test -race -coverpkg=./core/...,./coverage/...,./cli/...,./mutation/...,./internal/... -coverprofile=coverage.txt ./...
 
       - name: Coverage floor (95%)
         run: |
@@ -70,3 +70,19 @@ jobs:
           echo "methods=$methods crappy=$crappy"
           test "$methods" = "10" || { echo "expected 10 methods, got $methods"; exit 1; }
           test "$crappy" = "0"   || { echo "expected 0 crappy methods, got $crappy"; exit 1; }
+
+      # Mutation baseline: the fixture's tests kill every mutant except one
+      # marked equivalent. One mutant (id-- in Store.All) loops forever, so this
+      # step also checks that a timeout kills the whole go test process group.
+      - name: Mutation baseline (sampleapps/todolist)
+        run: |
+          json=$(./slopguard-go mutate --path ./sampleapps/todolist --json --quiet)
+          mutants=$(echo "$json" | jq '.summary.mutantCount')
+          killed=$(echo "$json" | jq '.summary.killed')
+          survived=$(echo "$json" | jq '.summary.survived')
+          score=$(echo "$json" | jq '.summary.mutationScore')
+          echo "mutants=$mutants killed=$killed survived=$survived score=$score"
+          test "$mutants" = "17" || { echo "expected 17 mutants, got $mutants"; exit 1; }
+          test "$killed" = "15"  || { echo "expected 15 killed, got $killed"; exit 1; }
+          test "$survived" = "0" || { echo "expected 0 survived, got $survived"; exit 1; }
+          test "$score" = "100"  || { echo "expected mutation score 100, got $score"; exit 1; }
